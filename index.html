@@ -42,7 +42,8 @@ html,body{margin:0;background:#120e20;color:var(--ink);font:15px/1.45 Kanit,syst
  radial-gradient(circle at 12px 19px,#cfd3e0 2px,transparent 3px) 0 0/22px 30px,
  linear-gradient(#5a3a22 4px,#6b4428 13px,#8a8070 13px,#7a7262 22px,#e0c890 22px,#d4b878 30px)}
 .glare{position:absolute;pointer-events:none;border-radius:20px;background:linear-gradient(rgba(255,255,255,.55),rgba(255,255,255,0));z-index:1}
-#cv{display:block;width:100%;height:auto;image-rendering:pixelated;image-rendering:crisp-edges;touch-action:none;cursor:pointer}
+#cv{display:block;width:100%;height:auto;image-rendering:pixelated;image-rendering:crisp-edges;touch-action:none;cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+#jar,#top{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 #toast{position:absolute;left:8px;right:8px;bottom:8px;background:rgba(43,29,47,.9);color:#fff6d6;font-size:13px;padding:4px 8px;border:2px solid #000;opacity:0;transition:opacity .3s;pointer-events:none;text-align:center}
 #toast.on{opacity:1}
 #hinge{height:10px;display:flex;justify-content:center;gap:120px;align-items:center}#hinge i{width:40px;height:4px;background:#2e2647}
@@ -191,7 +192,7 @@ const MODES={
     poop:[0,[1200,1800],[3600,5400],[7200,10800],[7200,10800]],sickK:.0007,die:259200,life:1728000,battleFirst:600,battleGap:[28800,43200],giftFirst:480,giftGap:[3600,3600],giftStay:3600,apple:14400,offCap:604800,step:60}
 };
 const BUILD_DEV=false;
-const BUILD_WEB=true, BUILD_VER='20261124204851';
+const BUILD_WEB=true, BUILD_VER='20261124205434';
 let DEV=BUILD_DEV&&(()=>{try{if(location.hash==='#dev') return true;}catch(e){} try{return localStorage.getItem('mg-dev')==='1';}catch(e){return false;}})();
 let MODE='real'; if(DEV){try{MODE=localStorage.getItem('mg-mode')||'real';}catch(e){}}
 if(!MODES[MODE]) MODE='real';
@@ -978,7 +979,7 @@ function tick(dt){
   if(S.granny&&S.t>S.granny.until){S.granny=null; S.nextGift=S.t+rnd(...M().giftGap); if(panel==='gift') setPanel('home');}
 }
 function moveM(m,dt){
-  if(m.held){ m.walking=false; return; }
+  if(m.held||(G&&G.m===m)){ m.walking=false; return; }
   const dx=m.tx-m.x, dy=m.ty-m.y, d=Math.hypot(dx,dy), v=dt*1.6*(m.act&&m.act.type==='fetch'?(m.act.boost||1.3):1);
   if(d>0.01){ if(Math.abs(dx)>0.05) m.flip=dx<0; if(d<=v){m.x=m.tx;m.y=m.ty;} else {m.x+=dx/d*v; m.y+=dy/d*v;} m.walking=true;} else m.walking=false;
 }
@@ -1169,25 +1170,25 @@ function cellFromEvent(e){const r=cv.getBoundingClientRect(); const x=(e.clientX
 let painting=false;
 function paintAt(e){ const [c,r]=cellFromEvent(e); if(c<0||r<0||c>=COLS||r>=ROWS) return; const k=c+','+r; const cur=S.floor[k]||'grass'; if(cur===decor.brush) return; if(decor.brush==='grass') delete S.floor[k]; else S.floor[k]=decor.brush; paintCell(ground.getContext('2d'),c,r,decor.brush); }
 let G=null, eatClickT=-1e9;
-function monAt(x,y){ let best=null, bd=0.9; for(const m of S.mons){ if(homeOf(m)) continue; const d=Math.hypot(m.x+.5-x/CELL,m.y+.55-y/CELL); if(d<bd){bd=d;best=m;}} return best; }
+function monAt(x,y,rad){ let best=null, bd=rad||0.9; for(const m of S.mons){ if(homeOf(m)) continue; const d=Math.hypot(m.x+.5-x/CELL,m.y+.55-y/CELL); if(d<bd){bd=d;best=m;}} return best; }
 cv.addEventListener('pointerdown',e=>{
   if(decor&&decor.tab==='floor'&&decor.brush){painting=true; paintAt(e); try{cv.setPointerCapture(e.pointerId);}catch(_){} return;}
   if(VISIT){ const [c0,r0,x0,y0]=cellFromEvent(e); const vm=monAt(x0,y0); if(vm&&sp(vm).st>0) emote(vm,pick(['heart','note','e_joy']),1.6); return; }
   if(FBT&&FBT.phase!=='order') return;
   if(decor||(B&&!B.over)||ballAim) return;
-  const [c,r,x,y]=cellFromEvent(e); const m=monAt(x,y); if(!m||sp(m).st===0) return;
-  G={m,x0:x,y0:y,lx:x,dir:0,flips:0,t0:performance.now(),mode:null,id:e.pointerId};
+  const touch=e.pointerType==='touch'||e.pointerType==='pen'; const [c,r,x,y]=cellFromEvent(e); const m=monAt(x,y,touch?1.3:0.9); if(!m||sp(m).st===0) return;
+  G={m,x0:x,y0:y,lx:x,dir:0,flips:0,t0:performance.now(),mode:null,id:e.pointerId,thr:touch?18:8,step:touch?8:5};
   try{cv.setPointerCapture(e.pointerId);}catch(_){}
-  G.timer=setTimeout(()=>{ if(G&&!G.mode&&!(sp(G.m).st===0)){ G.mode='hold'; const m=G.m; m.held=true; m.prevAct=m.act; m.act={type:'held',t0:S.t,until:S.t+1e9}; m.em=null; m.hx=G.x0; m.hy=G.y0; emote(m,'excl',0.8); } },420);
+  G.timer=setTimeout(()=>{ if(G&&!G.mode&&!(sp(G.m).st===0)){ G.mode='hold'; const m=G.m; m.held=true; m.prevAct=m.act; m.act={type:'held',t0:S.t,until:S.t+1e9}; m.em=null; m.hx=G.x0; m.hy=G.y0; emote(m,'excl',0.8); sfx('ok'); try{ navigator.vibrate&&navigator.vibrate(15); }catch(_){} } },380);
 });
 cv.addEventListener('pointermove',e=>{
   if(decor){ decor.hover=cellFromEvent(e); if(painting&&decor.brush) paintAt(e); return; }
   if(!G) return; const [c,r,x,y]=cellFromEvent(e);
   if(G.mode==='hold'){ G.m.hx=x; G.m.hy=y; return; }
   const moved=Math.hypot(x-G.x0,y-G.y0);
-  if(!G.mode&&moved>8){ G.mode='rub'; clearTimeout(G.timer); }
-  if(G.mode==='rub'){ const dx=x-G.lx; if(Math.abs(dx)>5){ const d=Math.sign(dx); if(G.dir&&d!==G.dir) G.flips++; G.dir=d; G.lx=x; }
-    if(G.flips>=3&&monAt(x,y)===G.m){ pet(G.m); G.flips=-99; } }
+  if(!G.mode&&moved>G.thr){ G.mode='rub'; clearTimeout(G.timer); }
+  if(G.mode==='rub'){ const dx=x-G.lx; if(Math.abs(dx)>G.step){ const d=Math.sign(dx); if(G.dir&&d!==G.dir) G.flips++; G.dir=d; G.lx=x; }
+    if(G.flips>=3&&Math.hypot(G.m.x+.5-x/CELL,G.m.y+.55-y/CELL)<1.8){ pet(G.m); G.flips=-99; } }
 });
 function endGesture(e){
   painting=false; if(!G) return; clearTimeout(G.timer); const g=G; G=null;
@@ -1202,7 +1203,7 @@ function endGesture(e){
     render(); }
   else if(g.mode==='rub') eatClickT=performance.now();
 }
-cv.addEventListener('pointerup',endGesture); cv.addEventListener('pointercancel',endGesture);
+cv.addEventListener('contextmenu',e=>e.preventDefault()); cv.addEventListener('pointerup',endGesture); cv.addEventListener('pointercancel',endGesture);
 cv.addEventListener('click',e=>{
   if(VISIT||(FBT&&FBT.phase!=='order')) return;
   if(performance.now()-eatClickT<450){ eatClickT=-1e9; return; }

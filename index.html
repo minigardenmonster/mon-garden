@@ -191,7 +191,7 @@ const MODES={
     poop:[0,[1200,1800],[3600,5400],[7200,10800],[7200,10800]],sickK:.0007,die:259200,life:1728000,battleFirst:600,battleGap:[28800,43200],giftFirst:480,giftGap:[3600,3600],giftStay:3600,apple:14400,offCap:604800,step:60}
 };
 const BUILD_DEV=false;
-const BUILD_WEB=true, BUILD_VER='20261124202335';
+const BUILD_WEB=true, BUILD_VER='20261124204851';
 let DEV=BUILD_DEV&&(()=>{try{if(location.hash==='#dev') return true;}catch(e){} try{return localStorage.getItem('mg-dev')==='1';}catch(e){return false;}})();
 let MODE='real'; if(DEV){try{MODE=localStorage.getItem('mg-mode')||'real';}catch(e){}}
 if(!MODES[MODE]) MODE='real';
@@ -1713,6 +1713,7 @@ function catchUp(){
     for(const m of S.mons){ if(m.flags.poopAt&&S.t>=m.flags.poopAt){m.flags.poopAt=0; const n=randFree(); if(n) S.poops.push({id:uid++,c:n[0],r:n[1],t:S.t});} } }
   if(S.nextBattle<1e12&&S.nextBattle<S.t+30) S.nextBattle=S.t+Math.min(300,C.battleFirst);
   if(S.granny&&S.t>S.granny.until){S.granny=null;} if(!S.granny&&S.t>=S.nextGift) S.nextGift=S.t+10;
+  if(S.lights) for(const m of S.mons){ if(m.act&&m.act.type==='sleep'&&m.en>=60){ m.act=null; m.em=null; } }
   awayInfo={sec:away,poops:S.poops.length-p0,apples};
   if(away<60&&!awayLog.length){toast(`ผ่านไป ${fmt(away)}`); awayInfo=null;}
 }

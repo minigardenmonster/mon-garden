@@ -192,7 +192,7 @@ const MODES={
     poop:[0,[1200,1800],[3600,5400],[7200,10800],[7200,10800]],sickK:.0007,die:259200,life:1728000,battleFirst:600,battleGap:[28800,43200],giftFirst:480,giftGap:[3600,3600],giftStay:3600,apple:14400,offCap:604800,step:60}
 };
 const BUILD_DEV=false;
-const BUILD_WEB=true, BUILD_VER='20261127132048';
+const BUILD_WEB=true, BUILD_VER='20261127203708';
 let DEV=BUILD_DEV&&(()=>{try{if(location.hash==='#dev') return true;}catch(e){} try{return localStorage.getItem('mg-dev')==='1';}catch(e){return false;}})();
 let MODE='real'; if(DEV){try{MODE=localStorage.getItem('mg-mode')||'real';}catch(e){}}
 if(!MODES[MODE]) MODE='real';
@@ -335,10 +335,10 @@ async function cloudInit(){
     if(!snap){ cloudState='off'; return; }
     const d=snap.exists?snap.data():null;
     if(d&&typeof d.json==='string'){
-      if(BUILD_WEB){ cloudBest=Math.max(d.bestScore||0,score(d.json)); cloudBestJs=typeof d.best==='string'?d.best:''; }
-      const rs=score(d.json), ls=score(JSON.stringify(S));
+      if(BUILD_WEB){ cloudBestJs=typeof d.best==='string'?d.best:''; cloudBest=Math.max(progOf(cloudBestJs),progOf(d.json)); }
+      const rs=progOf(d.json), ls=isVisitCopy(S)?0:(S.prog||0);
       let guard=false; try{ guard=sessionStorage.getItem('mg-cloud-pulled')===String(d.saved); }catch(e){}
-      if(!guard&&(rs>ls||((d.saved||0)>(S.saved||0)+60000&&rs>=ls*0.8))){
+      if(!guard&&rs>ls+5){
         try{ sessionStorage.setItem('mg-cloud-pulled',String(d.saved)); localStorage.setItem(keyOf(MODE)+'-bak-'+Date.now(),JSON.stringify(S)); localStorage.setItem(keyOf(MODE),d.json); }catch(e){}
         const s=norm(JSON.parse(d.json)); if(s){ RELOADING=true; toast('โหลดเซฟจากคลาวด์แล้ว'); setTimeout(()=>{ try{location.reload();}catch(e){} },500); cloudState='on'; return; }
       }
@@ -349,7 +349,7 @@ async function cloudInit(){
 async function cloudPush(force){
   if(VISIT||RELOADING||(S&&S.__visit)||!CLOUD||cloudBusy||cloudMode!==MODE) return; const js=JSON.stringify(S); if(!force&&js===cloudLastJs) return; if(js.length>240000) return;
   cloudBusy=true;
-  try{ const o={json:js,saved:S.saved||Date.now(),v:1}; if(BUILD_WEB){ const sc=score(js); if(sc>=cloudBest){ cloudBest=sc; cloudBestJs=js; o.best=js; o.bestScore=sc; o.bestSaved=o.saved; } }
+  try{ const o={json:js,saved:S.saved||Date.now(),v:1}; if(BUILD_WEB){ const sc=progOf(js); if(sc>=cloudBest){ cloudBest=sc; cloudBestJs=js; o.best=js; o.bestScore=sc; o.bestSaved=o.saved; } }
     await CLOUD.set(o); cloudLastJs=js; cloudAt=Date.now(); cloudState='on'; }
   catch(e){ if(e&&(e.code==='invalid_argument'||e.code==='revoked'||e.code==='not_granted'||e.code==='capability_disabled')){ CLOUD=null; cloudState='noperm'; } }
   cloudBusy=false; if(BUILD_WEB) pubPush();
@@ -368,6 +368,10 @@ function norm(s){ if(!s||s.v!==1||!Array.isArray(s.mons)) return null; if(s.mode
   for(const k in LEGACY) if(s.inv[k]){ s.inv[LEGACY[k]]=(s.inv[LEGACY[k]]||0)+s.inv[k]; delete s.inv[k]; } uid=s.uid||100; s.battles=s.battles||0; s.born=s.born||Date.now(); s.drops=s.drops||[]; s.poops=s.poops||[];
   if(s.nextBattle<1e11&&!s.mons.some(m=>SP[m.sp].st>=2)) s.nextBattle=1e12; return s; }
 function isVisitCopy(s){ try{ return !!s&&(!!s.__visit||((s.mons||[]).some(m=>m.id>=90000&&m.id<90100)&&(s.items||[]).some(i=>i.id>=80000&&i.id<80300))); }catch(e){ return false; } }
+function legacyProg(s){ let p=(s.battles||0)*60+(s.items||[]).length*20+(s.cards||[]).length*200;
+  for(const m of (s.mons||[]).concat((s.cards||[]).map(c=>c.m))){ if(!m) continue; const tr=m.tr||{}, cn=m.cn||{}; p+=((tr.pow||0)+(tr.spd||0)+(tr.sta||0)+(tr.smt||0))*30; for(const k in cn) p+=(+cn[k]||0)*10; p+=((SP[m.sp]||{st:0}).st)*300; }
+  return p; }
+function progOf(x){ try{ const s=typeof x==='string'?JSON.parse(x):x; if(!s||!Array.isArray(s.mons)) return -1; if(isVisitCopy(s)) return 0; return typeof s.prog==='number'?s.prog:legacyProg(s); }catch(e){ return -1; } }
 function score(raw){ try{const s=JSON.parse(raw); if(!s||!Array.isArray(s.mons)) return -1; if(isVisitCopy(s)) return 0; return s.mons.concat((s.cards||[]).map(c=>c.m)).reduce((a,m)=>a+((SP[m.sp]||{st:0}).st*100000)+(m.age||0),0);}catch(e){return -1;} }
 let STORAGE_OK=true, MIGRATED=false, RECOVERED=false; const IS_SAFARI=(()=>{try{const u=navigator.userAgent; return /safari/i.test(u)&&!/chrome|chromium|crios|fxios|android|edg/i.test(u);}catch(e){return false;}})();
 (function(){ try{localStorage.setItem('mg-test','1'); STORAGE_OK=localStorage.getItem('mg-test')==='1'; localStorage.removeItem('mg-test');}catch(e){STORAGE_OK=false;}
@@ -384,13 +388,14 @@ let STORAGE_OK=true, MIGRATED=false, RECOVERED=false; const IS_SAFARI=(()=>{try{
 function load(){
   try{let raw=localStorage.getItem(keyOf(MODE)); if(!raw&&MODE==='fast') raw=localStorage.getItem('monster-garden-v1b');
     if(raw){ let s=null; try{ s=norm(JSON.parse(raw)); }catch(e){}
-      if(s&&isVisitCopy(s)){ let best=null, bs=0; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(!k||!k.startsWith(keyOf(MODE)+'-bak')) continue; const r2=localStorage.getItem(k), sc=score(r2); if(sc>bs){ bs=sc; best=r2; } }
+      if(s&&isVisitCopy(s)){ let best=null, bs=0; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(!k||!k.startsWith(keyOf(MODE)+'-bak')) continue; const r2=localStorage.getItem(k), sc=progOf(r2); if(sc>bs){ bs=sc; best=r2; } }
         const s2=best?norm(JSON.parse(best)):null; try{ localStorage.setItem(keyOf(MODE)+'-bak-visit-'+Date.now(),raw); }catch(e){}
         if(s2&&!isVisitCopy(s2)){ RECOVERED=true; try{ localStorage.setItem(keyOf(MODE),best); }catch(e){} return s2; } delete s.__visit; }
       if(s) return s; try{ localStorage.setItem(keyOf(MODE)+'-bak-'+Date.now(),raw); }catch(e){} } }catch(e){}
   return fresh();
 }
 S=load();
+if(typeof S.prog!=='number') S.prog=legacyProg(S);
 for(const m of S.mons){m.act=null; m.held=false;}
 if(RECOVERED) toastLater=()=>toast('กู้สวนของคุณคืนจากข้อมูลสำรองในเครื่องแล้ว');
 if(S.drops) for(const d of S.drops) if(S.food[d.k]>=0) S.food[d.k]=(S.food[d.k]||0)+(d.paid?1:0);
@@ -1524,8 +1529,8 @@ function statusP(){
    <div class="sm">ฝึก: พลัง ${t.pow.toFixed(1)} · เร็ว ${t.spd.toFixed(1)} · อึด ${t.sta.toFixed(1)} · ฉลาด ${t.smt.toFixed(1)} · ดูแลพลาด ${m.mis} · ค่าพิษ ${m.cn.poison}</div>
    <div class="h" style="font-size:12px">ความสัมพันธ์</div>${rels}`:'<div class="sm">ข้อมูลจะปรากฏเมื่อฟักออกมา</div>'}</div>`;
 }
-function oldSaves(){ const out=[]; try{ const cur=score(localStorage.getItem(keyOf(MODE))||'');
-  for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(!k||!k.startsWith(keyOf(MODE)+'-bak')) continue; const raw=localStorage.getItem(k), sc=score(raw); if(sc>cur){ try{ const s=JSON.parse(raw); out.push({k,sc,n:s.mons.length,names:s.mons.map(m=>m.name).join(', '),t:s.saved||0}); }catch(e){} } } }catch(e){} return out.sort((a,b)=>b.sc-a.sc).slice(0,3); }
+function oldSaves(){ const out=[]; try{ const cur=Math.max(S.prog||0,progOf(localStorage.getItem(keyOf(MODE))||''));
+  for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(!k||!k.startsWith(keyOf(MODE)+'-bak')) continue; const raw=localStorage.getItem(k), sc=progOf(raw); if(sc>cur){ try{ const s=JSON.parse(raw); out.push({k,sc,n:s.mons.length,names:s.mons.map(m=>m.name).join(', '),t:s.saved||0}); }catch(e){} } } }catch(e){} return out.sort((a,b)=>b.sc-a.sc).slice(0,3); }
 function restoreSave(k){ try{ const raw=localStorage.getItem(k); const s=norm(JSON.parse(raw)); if(!s) throw 0; localStorage.setItem(keyOf(MODE)+'-bak-'+Date.now(),JSON.stringify(S)); localStorage.setItem(keyOf(MODE),raw); RELOADING=true; toast('กู้เซฟแล้ว กำลังโหลดใหม่…'); setTimeout(()=>{ try{location.reload();}catch(e){} },600); }catch(e){ toast('กู้เซฟนี้ไม่ได้'); } }
 const SHOP_FOOD={f_orange:7,f_banana:8,f_onigiri:6,f_carrot:6,f_fish:10,f_mushroom:10,f_stew:12,f_pot:15,f_cake:14,f_grape:8};
 const SHOP_PRICE_BY_STAR={1:20,2:35,3:60};
@@ -1550,7 +1555,7 @@ function bagP(){
   const mem=gv.length?`<div class="box"><div class="row" style="justify-content:space-between"><span class="h" style="font-size:13px">ความทรงจำ</span><span class="row sm">${im('revive',18)} ดอกไม้ชุบชีวิต x${rv}</span></div>
     ${gv.map((g,i)=>`<div class="row" style="justify-content:space-between;gap:6px"><span class="sm">${g.name} · ${g.sp} · ${g.cause==='old'?'จากไปด้วยวัยชรา':'จากไปเพราะป่วย'}</span>${g.mon?`<button class="b ${rv?'y':''}" style="height:30px;font-size:12px" data-revive="${i}" ${rv&&S.mons.length<4?'':'disabled'}>ชุบชีวิต</button>`:'<span class="sm">ชุบชีวิตไม่ได้</span>'}</div>`).join('')}
     <div class="sm" style="font-size:10px">ดอกไม้ชุบชีวิตหายากมาก ได้จากชนะการต่อสู้หรือยายเห็ดนานๆ ครั้ง · ในสวนมีมอนได้สูงสุด 4 ตัว</div></div>`:(rv?`<div class="box sm">${im('revive',18)} ดอกไม้ชุบชีวิต x${rv} · ใช้ชุบชีวิตมอนที่จากไปได้</div>`:'');
-  const cbs=cloudBestJs?score(cloudBestJs):0, cbBox=cbs>score(JSON.stringify(S))*1.05&&cbs>0?(()=>{ let n='',t=0; try{ const o=JSON.parse(cloudBestJs); n=o.mons.map(m=>m.name).join(', '); t=o.saved||0; }catch(e){} return `<div class="box" style="background:#fff3c4;border-color:#c99a12"><div class="h" style="font-size:13px">พบสวนที่ดีกว่าในคลาวด์</div><div class="row" style="justify-content:space-between;gap:6px"><span class="sm">${n}${t?' · '+new Date(t).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}):''}</span><button class="b y" style="height:30px;font-size:12px" data-cbest="1">กู้คืน</button></div></div>`; })():'';
+  const cbs=cloudBestJs?progOf(cloudBestJs):0, cbBox=cbs>(S.prog||0)+600&&cbs>0?(()=>{ let n='',t=0; try{ const o=JSON.parse(cloudBestJs); n=o.mons.map(m=>m.name).join(', '); t=o.saved||0; }catch(e){} return `<div class="box" style="background:#fff3c4;border-color:#c99a12"><div class="h" style="font-size:13px">พบสวนที่ดีกว่าในคลาวด์</div><div class="row" style="justify-content:space-between;gap:6px"><span class="sm">${n}${t?' · '+new Date(t).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}):''}</span><button class="b y" style="height:30px;font-size:12px" data-cbest="1">กู้คืน</button></div></div>`; })():'';
   const olds=oldSaves(); const oldBox=cbBox+(olds.length?`<div class="box" style="background:#fff3c4;border-color:#c99a12"><div class="h" style="font-size:13px">พบเซฟเก่าในเครื่องนี้</div>${olds.map(o=>`<div class="row" style="justify-content:space-between;gap:6px"><span class="sm">มอน ${o.n} ตัว: ${o.names}${o.t?' · '+new Date(o.t).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}):''}</span><button class="b y" style="height:30px;font-size:12px" data-restore="${o.k}">กู้คืน</button></div>`).join('')}</div>`:'');
   const gu=FB&&FB.au.currentUser, linked=gu&&!gu.isAnonymous;
   const cl=cloudState==='on'?`<div class="box sm" style="background:#e3f6e8;border-color:#2f8a4a">☁ เซฟบนคลาวด์เปิดอยู่${cloudAt?' · บันทึกล่าสุด '+new Date(cloudAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):''}${BUILD_WEB?(linked?` · เชื่อมกับ ${gu.email||'บัญชี Google'} แล้ว เปิดเครื่องไหนก็เล่นต่อได้`:`<div class="row" style="justify-content:space-between;gap:6px;margin-top:4px"><span>ตอนนี้เซฟผูกกับเครื่องนี้ · กดเพื่อกันเซฟหาย<br><b>เครื่องใหม่?</b> กดแล้วเลือกบัญชี Google เดิม สวนเดิมจะโหลดมาเอง</span><button class="b y" data-glink="1" style="height:34px;font-size:12px">เข้าสู่ระบบ Google</button></div>`):' · เปิดจากเครื่องไหนก็เล่นต่อได้'}</div>`:cloudState==='checking'?'':`<div class="box sm">เครื่องนี้ใช้เซฟคลาวด์ไม่ได้ (ต้องล็อกอิน claude.ai และมีสิทธิ์ผู้ร่วมใช้) · เซฟอยู่ในเครื่องนี้เท่านั้น ควรสร้างรหัสสำรองไว้</div>`;
@@ -1669,7 +1674,7 @@ document.getElementById('bot').addEventListener('click',e=>{
   if(d.pick){ if(!IT[d.pick]||!S.inv[d.pick]) return; decor=decor||{}; decor.pick=decor.pick===d.pick?null:d.pick; render(); return;}
   if(d.rn){ if(d.rn==='open'){renameOpen=true; render(); const i=document.getElementById('nmI'); if(i) i.focus(); return;} const i=document.getElementById('nmI'); const v=(i&&i.value.trim())||''; if(v) selM().name=v.slice(0,12); renameOpen=false; render(); return; }
   if(d.buy){const k=d.buy; const price=shopPrice(k); if(price==null){ toast('ของชิ้นนี้หมดรอบแล้ว'); render(); return; } if(S.coins<price) return; const G=shopGoods(); if(!S.shopB||S.shopB.slot!==G.slot) S.shopB={slot:G.slot,keys:[]}; if(IT[k]){ if(S.shopB.keys.includes(k)) return; S.shopB.keys.push(k); } if(k==='egg'){const p=randFree(); if(!p||S.mons.length>=4) return; S.mons.push(newMon(...p)); toast('ซื้อไข่ใบใหม่แล้ว'); ensureHomes();} else if(FOOD[k]) S.food[k]=(S.food[k]||0)+1; else S.inv[k]=(S.inv[k]||0)+1; S.coins-=price; sfx('buy'); render(); return;}
-  if(d.reset){ if(d.reset==='ask'){resetAsk=true; render(); return;} if(d.reset==='no'){resetAsk=false; render(); return;} S=fresh(); B=null; decor=null; buildPond(); try{localStorage.removeItem(keyOf(MODE));}catch(e){} setPanel('home'); toast('เริ่มเกมใหม่แล้ว'); return; }
+  if(d.reset){ if(d.reset==='ask'){resetAsk=true; render(); return;} if(d.reset==='no'){resetAsk=false; render(); return;} { const op=Math.max(S.prog||0,progOf(cloudLastJs||'{}')); S=fresh(); S.prog=op+10; } B=null; decor=null; buildPond(); try{localStorage.removeItem(keyOf(MODE));}catch(e){} setPanel('home'); toast('เริ่มเกมใหม่แล้ว'); return; }
   if(d.backupnow){ setPanel('bag'); bk='out'; render(); return; }
   if(d.bk){ const k=d.bk;
     if(k==='out'||k==='in'){ bk=bk===k?null:k; bkMsg=''; render(); return; }
@@ -1709,6 +1714,7 @@ function frame(now){
 }
 function frameBody(now){
   const dt=Math.min(0.1,(now-last)/1000); last=now;
+  if(!VISIT&&!S.__visit&&dt>0){ try{ if(document.visibilityState!=='hidden') S.prog=(S.prog||0)+dt; }catch(e){} }
   tick(dt); stepFX(dt); if(TO.length){const due=TO.filter(o=>S.t>=o.t); TO=TO.filter(o=>S.t<o.t); due.forEach(o=>o.f());}
   if(trainG&&!trainG.done){trainG.pos+=trainG.dir*trainG.spd*dt; if(trainG.pos>=100){trainG.pos=100;trainG.dir=-1;} if(trainG.pos<=0){trainG.pos=0;trainG.dir=1;} const n=document.getElementById('needle'); if(n) n.style.left=`calc(${trainG.pos}% - 3px)`;}
   draw();

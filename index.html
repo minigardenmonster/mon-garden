@@ -192,7 +192,7 @@ const MODES={
     poop:[0,[1200,1800],[3600,5400],[7200,10800],[7200,10800]],sickK:.0007,die:259200,life:1728000,battleFirst:600,battleGap:[28800,43200],giftFirst:480,giftGap:[3600,3600],giftStay:3600,apple:14400,offCap:604800,step:60}
 };
 const BUILD_DEV=false;
-const BUILD_WEB=true, BUILD_VER='20261127203708';
+const BUILD_WEB=true, BUILD_VER='20261127204841';
 let DEV=BUILD_DEV&&(()=>{try{if(location.hash==='#dev') return true;}catch(e){} try{return localStorage.getItem('mg-dev')==='1';}catch(e){return false;}})();
 let MODE='real'; if(DEV){try{MODE=localStorage.getItem('mg-mode')||'real';}catch(e){}}
 if(!MODES[MODE]) MODE='real';
@@ -354,7 +354,7 @@ async function cloudPush(force){
   catch(e){ if(e&&(e.code==='invalid_argument'||e.code==='revoked'||e.code==='not_granted'||e.code==='capability_disabled')){ CLOUD=null; cloudState='noperm'; } }
   cloudBusy=false; if(BUILD_WEB) pubPush();
 }
-try{ document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden'){ save(); cloudPush(); } }); }catch(e){}
+try{ document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden'){ save(); cloudPush(); } else if(BUILD_WEB&&typeof giftsLoad==='function'){ giftsLoad(); } }); }catch(e){}
 setTimeout(cloudInit,0);
 let lastRoll=0;
 function save(){if(VISIT||RELOADING||(S&&S.__visit)) return; try{S.uid=uid;S.saved=Date.now(); const js=JSON.stringify(S); localStorage.setItem(keyOf(MODE),js);
@@ -1266,7 +1266,7 @@ async function pubPush(force){
   if(!force&&(js===FR.pubJs||Date.now()-FR.pubAt<300000)) return;
   FR.pubAt=Date.now(); try{ await FB.fs.setDoc(FB.fs.doc(FB.db,'pub',myUid()),d); FR.pubJs=js; }catch(e){}
 }
-async function friendsBoot(){ try{ await ensureCode(); await pubPush(true); await loadFriends(); if(['home','friends'].includes(panel)) render(); }catch(e){} }
+async function friendsBoot(){ try{ await ensureCode(); giftsLoad(); await pubPush(true); await loadFriends(); if(['home','friends'].includes(panel)) render(); }catch(e){} }
 async function loadFriends(){
   if(!frReady()||!(S.friends||[]).length) return; const {fs,db}=FB;
   await Promise.all(S.friends.map(async f=>{ try{ const p=await fs.getDoc(fs.doc(db,'pub',f.uid)); if(p.exists()){ FR.info[f.uid]=p.data(); if(p.data().name) f.name=p.data().name; } }catch(e){} }));
@@ -1284,7 +1284,7 @@ async function addFriend(raw){
 }
 function agoTxt(t){ if(!t) return 'ยังไม่เคยเข้าเกม'; const s=(Date.now()-t)/1000; if(s<120) return 'ออนไลน์อยู่'; if(s<3600) return `ออนไลน์ ${Math.floor(s/60)} นาทีก่อน`; if(s<86400) return `ออนไลน์ ${Math.floor(s/3600)} ชม. ก่อน`; const d=Math.floor(s/86400); return d===1?'เมื่อวาน':`${d} วันก่อน`; }
 function frBar(){ if(!BUILD_WEB) return ''; const c=myCodeNow();
-  return `<div class="box row" style="justify-content:space-between;gap:6px;padding:4px 8px"><span style="display:flex;flex-direction:column;line-height:1.1"><span class="sm" style="font-size:10px">รหัสฉัน</span><b style="font-size:17px;letter-spacing:1px">${c?fmtCode(c):'…'}</b></span>
+  return giftBox()+`<div class="box row" style="justify-content:space-between;gap:6px;padding:4px 8px"><span style="display:flex;flex-direction:column;line-height:1.1"><span class="sm" style="font-size:10px">รหัสฉัน</span><b style="font-size:17px;letter-spacing:1px">${c?fmtCode(c):'…'}</b></span>
     <span class="row" style="gap:6px"><button class="b y" data-fr="copy" style="height:32px;font-size:12px" ${c?'':'disabled'}>ก๊อป</button><button class="b" data-p="friends" style="height:32px;font-size:12px;background:#a0dcff">เพื่อน ${(S.friends||[]).length}</button></span></div>`; }
 function friendsP(){
   if(!BUILD_WEB) return `<div class="box"><b>ระบบเพื่อนใช้ได้ที่เว็บใหม่</b><div class="sm">${WEB_URL}</div></div><button class="b" data-p="home">กลับ</button>`;
@@ -1305,6 +1305,21 @@ function friendsP(){
       <div class="grid2"><button class="b" data-fv="${f.uid}" style="height:34px;background:#a0dcff">เที่ยวสวน</button><button class="b r" data-ff="${f.uid}" style="height:34px">ท้าสู้</button></div></div>`; }
   h+=`<button class="b" data-p="home">กลับไปที่สวน</button>`; return h;
 }
+
+/* ---- gifts from the team: Firestore gifts/{CODE} and gifts/ALL, {list:[{id,msg,coins,special,food,inv}]}, claimed once per save ---- */
+var TGIFTS=[];
+async function giftsLoad(){ if(!frReady()||VISIT) return; const c=myCodeNow(); if(!c) return; const {fs,db}=FB; const out=[];
+  for(const k of [c,'ALL']){ try{ const d=await fs.getDoc(fs.doc(db,'gifts',k)); if(d.exists()) for(const g of (d.data().list||[])) if(g&&g.id&&!(S.claimed||[]).includes(g.id)&&!out.some(x=>x.id===g.id)) out.push(g); }catch(e){} }
+  TGIFTS=out; if(panel==='home') render(); }
+function giftDesc(g){ const p=[]; if(+g.coins) p.push(`${+g.coins} เหรียญ`); const sn={hstone:'หินไฮเปอร์',revive:'ดอกไม้ชุบชีวิต'};
+  for(const k in g.special||{}) p.push(`${sn[k]||k} ×${g.special[k]}`); for(const k in g.food||{}) if(FOOD[k]) p.push(`${FOOD[k].n} ×${g.food[k]}`); for(const k in g.inv||{}) if(IT[k]) p.push(`${IT[k].n} ×${g.inv[k]}`); return p.join(', '); }
+function giftBox(){ if(!TGIFTS.length||VISIT) return ''; const g=TGIFTS[0];
+  return `<div class="box" style="background:#ffe1e1;border-color:#c9483b;display:flex;flex-direction:column;gap:4px"><b>มีของขวัญจากทีมงาน!</b>${g.msg?`<div class="sm">${escH(g.msg)}</div>`:''}<div class="sm">ได้: <b>${escH(giftDesc(g))}</b></div><button class="b y" data-giftc="${escH(g.id)}">รับของขวัญ</button></div>`; }
+function giftClaim(id){ const g=TGIFTS.find(x=>x.id===id); if(!g||VISIT) return; S.claimed=S.claimed||[]; if(S.claimed.includes(id)) return; S.claimed.push(id);
+  if(+g.coins) S.coins+=+g.coins; S.special=S.special||{}; for(const k in g.special||{}) S.special[k]=(S.special[k]||0)+(+g.special[k]||0);
+  S.food=S.food||{}; for(const k in g.food||{}) if(FOOD[k]) S.food[k]=(S.food[k]||0)+(+g.food[k]||0);
+  S.inv=S.inv||{}; for(const k in g.inv||{}) if(IT[k]) S.inv[k]=(S.inv[k]||0)+(+g.inv[k]||0);
+  TGIFTS=TGIFTS.filter(x=>x.id!==id); sfx('envelope'); toast('ได้รับ '+giftDesc(g)); save(); cloudPush(true); render(); }
 /* ---- visit: swap in a read-only copy of the friend's garden ---- */
 function visitState(pd){ const g=pd.g||{};
   const items=(g.items||[]).filter(i=>IT[i.k]&&(SPR[i.k]||i.k==='pond')).map((i,j)=>({id:80000+j,k:i.k,c:i.c,r:i.r,ox:i.ox||0,oy:i.oy||0,cond:1}));
@@ -1639,6 +1654,7 @@ document.getElementById('bot').addEventListener('click',e=>{
   if(d.sel){S.sel=+d.sel; render(); return;}
   if(d.p){ if(d.clearaway) awayLog=[]; if(d.p==='friends') FR.msg=''; setPanel(d.p); return;}
   if(d.fr){ frClick(d.fr); return; }
+  if(d.giftc){ giftClaim(d.giftc); return; }
   if(d.fo){ const id=+d.fo; if(fbtSel.includes(id)) fbtSel=fbtSel.filter(x=>x!==id); else if(fbtSel.length<3) fbtSel.push(id); render(); return; }
   if(d.fv){ const f=(S.friends||[]).find(x=>x.uid===d.fv); if(f) visitStart(f); return; }
   if(d.ff){ const f=(S.friends||[]).find(x=>x.uid===d.ff); if(f) fbtOpen(f); return; }
